@@ -1,0 +1,55 @@
+V1.0.0
+date: 2024/05/09
+
+V1.0.1
+date: 2024/05/23
+
+v1.0.2
+date: 2024/05/30
+
+v1.0.3
+date: 2024/06/07
+
+v1.0.4
+date: 2024/06/14
+
+v1.0.4
+date: 2024/06/21
+
+v1.0.4
+date: 2024/07/09
+
+v1.0.4
+date: 2024/07/19
+
+v1.0.5
+date: 2024/07/22
+
+v1.0.6
+date: 2024/08/8
+
+v1.0.6
+date: 2024/08/13
+
+v1.0.7
+date: 2024/10/08
+1.Add the firmware version check and the type of robot check
+
+date: 2024/10/10
+2.Supports Nova 5
+3.Supports 1M and 2M baud rate main hand
+
+date: 2024/12/5
+1. Directory
+2. Protection bug
+3. "6_dataset_count.py": bug
+4. Package version add in "requirement.txt"
+
+date: 2024/12/6
+1. change 30004 port timeout to 50ms
+
+date: 2024/12/10
+1. revise script "examples/example_rad_data_from_datasets.py"
+
+date: 2024/12/111
+1. frames>3500, "4_collect2train_data.py" bug
