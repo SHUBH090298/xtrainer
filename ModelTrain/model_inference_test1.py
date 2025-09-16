@@ -12,11 +12,17 @@ if __name__ == '__main__':
     model = Imitate_Model(ckpt_name='policy_last.ckpt')
     model.loadModel()
     # Load your checkpoint and check for action normalization stats  
-ckpt_dict = torch.load("./ckpt/ckpt_move_cube_new/policy_last.ckpt")  
-if "action_normalization_stats" in ckpt_dict:  
-    print("Action normalization stats found:", ckpt_dict["action_normalization_stats"])  
-else:  
-    print("ERROR: No action normalization stats in checkpoint!")
+    ckpt_dict = torch.load("./ckpt/ckpt_move_cube_new/policy_last.ckpt")  
+    if "action_normalization_stats" in ckpt_dict:  
+        print("Action normalization stats found:", ckpt_dict["action_normalization_stats"])  
+        # Extract scale and offset for denormalization
+        action_mean = np.array(ckpt_dict["action_normalization_stats"]["mean"])
+        action_std = np.array(ckpt_dict["action_normalization_stats"]["std"])
+    else:  
+        print("ERROR: No action normalization stats in checkpoint!")
+        action_mean = None
+        action_std = None
+
     observation = {'qpos':[],'images':{'left_wrist':[],'right_wrist':[],'top':[]}}
     i=0
     # while i<10:
@@ -31,7 +37,7 @@ else:
         # i +=1
 
     show_canvas = np.zeros((480, 640*3, 3), dtype=np.uint8)
-    with h5py.File("/home/shubh/dobot_xtrainer/experiments/datasets/Pick_Place/train_data/episode_init_16.hdf5", 'r', rdcc_nbytes=1024 ** 2 * 2) as root:
+    with h5py.File("/home/shubh/xtrainer/experiments/datasets/Pick_Place/train_data/episode_init_16.hdf5", 'r', rdcc_nbytes=1024 ** 2 * 2) as root:
         print(len(root["/observations/images/top"]))
         for i in range(len(root["/observations/images/top"])):
             qpos = root["/observations/qpos"][i]
@@ -51,9 +57,14 @@ else:
             predict_action = model.predict(observation, i)  # output
             print("Raw model output range:", predict_action.min(), "to", predict_action.max())  
             print("Raw model output shape:", predict_action.shape)
+            
             # Extract the first timestep and first 14 dimensions from the predicted action sequence  
             current_action = predict_action[0, :14]  # Take first timestep, first 14 dimensions  
+
+            # Denormalize predicted action if stats are available
+            if action_mean is not None and action_std is not None:
+                current_action = current_action * action_std + action_mean
+
             print("action_delta:",[np.rad2deg(i) for i in (current_action-action)])
             i += 1
-
             cv2.waitKey(0)

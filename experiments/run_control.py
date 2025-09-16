@@ -24,9 +24,9 @@ import requests
 class Args:
     robot_port: int = 6001
     hostname: str = "127.0.0.1"
-    show_img: bool = False
+    show_img: bool = True
     save_data_path = str(Path(__file__).parent.parent.parent)+"/datasets/"
-    project_name = "dataset_package_test"
+    project_name = "Pick_Place"
 
 
 # Thread button: [lock or nor, servo or not, record or not]

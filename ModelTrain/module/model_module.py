@@ -2,6 +2,7 @@
 import os
 import time
 import pickle
+from typing import Any
 
 import numpy as np
 import torch
@@ -120,8 +121,10 @@ def set_config():
 
 def _to_tensor_actions(x, device):
     """
-    Converts list/tuple/np.array/tensor of actions to a stacked tensor on given device.
+    Converts list/tuple/np.array/torch.Tensor of actions to a stacked tensor on given device.
     Handles nested lists, numpy arrays, torch tensors, or tuple outputs.
+
+    device may be a torch.device or a string like "cuda"/"cpu".
     """
     # unwrap tuple if needed
     if isinstance(x, tuple):
@@ -137,9 +140,53 @@ def _to_tensor_actions(x, device):
         elif isinstance(a, list):
             tensor_list.append(torch.tensor(a, dtype=torch.float32))
         else:
-            raise TypeError(f"Unsupported type for action: {type(a)}")
+            # try to coerce scalars
+            try:
+                tensor_list.append(torch.tensor(a, dtype=torch.float32))
+            except Exception as e:
+                raise TypeError(f"Unsupported type for action element: {type(a)} -- {e}")
     out = torch.stack(tensor_list).float()
-    return out.to(device)
+    # accept device as string or torch.device
+    device_obj = device if isinstance(device, torch.device) else torch.device(device)
+    return out.to(device_obj)
+
+
+def _extract_action_tensor(obj: Any, device: str = "cpu"):
+    """
+    Try to extract a meaningful (T x dim) tensor-like object from policy output.
+    Supports: torch.Tensor, np.ndarray, list, tuple, dict (recursively).
+    Returns: torch.Tensor on requested device.
+    Raises TypeError if nothing suitable found.
+    """
+    # Direct tensor/ndarray/list/tuple
+    if isinstance(obj, torch.Tensor):
+        return obj.to(device)
+    if isinstance(obj, np.ndarray):
+        return torch.from_numpy(obj).float().to(device)
+    if isinstance(obj, (list, tuple)):
+        # if list of tensors/arrays -> stack
+        # if list contains scalars -> convert
+        return _to_tensor_actions(list(obj), device)
+    if isinstance(obj, dict):
+        # try common keys first
+        for key in ("actions", "action", "pred", "output", "outputs", "outputs_pred"):
+            if key in obj:
+                try:
+                    return _extract_action_tensor(obj[key], device)
+                except Exception:
+                    pass
+        # otherwise iterate values and pick the first value that yields a tensor
+        for v in obj.values():
+            try:
+                return _extract_action_tensor(v, device)
+            except Exception:
+                continue
+        raise TypeError("Could not extract tensor from dict policy output.")
+    # last attempt: try to convert to tensor
+    try:
+        return torch.tensor(obj, dtype=torch.float32).to(device)
+    except Exception:
+        raise TypeError(f"Unsupported action output type: {type(obj)}")
 
 
 class Imitate_Model:
@@ -249,14 +296,35 @@ class Imitate_Model:
         stats_path = os.path.join(self.ckpt_dir, "dataset_stats.pkl")
         if not os.path.isabs(stats_path):
             stats_path = os.path.join(dir_path, stats_path)
-        with open(stats_path, "rb") as f:
-            stats = pickle.load(f)
 
-        self.pre_process = lambda s_qpos: (s_qpos - stats["qpos_mean"]) / stats["qpos_std"]
-        if self.policy_class == "Diffusion":
-            self.post_process = lambda a: (a + 1) / 2 * (stats["action_max"] - stats["action_min"]) + stats["action_min"]
+        # load stats safely and provide fallbacks if action normalization missing
+        try:
+            with open(stats_path, "rb") as f:
+                stats = pickle.load(f)
+        except Exception as e:
+            print(f"Warning: failed to load stats from {stats_path}: {e}")
+            stats = {}
+
+        # pre_process for qpos
+        if "qpos_mean" in stats and "qpos_std" in stats:
+            self.pre_process = lambda s_qpos: (s_qpos - stats["qpos_mean"]) / stats["qpos_std"]
         else:
-            self.post_process = lambda a: a * stats["action_std"] + stats["action_mean"]
+            print("Warning: qpos mean/std not found in stats - using identity pre_process")
+            self.pre_process = lambda s_qpos: s_qpos
+
+        # post_process for actions (support both mean/std or min/max or fallback identity)
+        if self.policy_class == "Diffusion":
+            if "action_max" in stats and "action_min" in stats:
+                self.post_process = lambda a: (a + 1) / 2 * (stats["action_max"] - stats["action_min"]) + stats["action_min"]
+            else:
+                print("Warning: action_min/action_max not found in stats - using identity post_process for Diffusion")
+                self.post_process = lambda a: a
+        else:
+            if "action_std" in stats and "action_mean" in stats:
+                self.post_process = lambda a: a * stats["action_std"] + stats["action_mean"]
+            else:
+                print("Warning: action_mean/action_std not found in stats - using identity post_process")
+                self.post_process = lambda a: a
 
         self.query_frequency = int(self.policy_config.get("num_queries", 1))
         if self.temporal_agg:
@@ -309,6 +377,8 @@ class Imitate_Model:
                 print("network warm up done")
 
             # Main action computation
+            device_name = "cuda" if torch.cuda.is_available() else "cpu"
+
             if self.policy_class == "ACT":
                 if t % self.query_frequency == 0 or self.all_actions is None:
                     if curr_image is None:
@@ -319,16 +389,41 @@ class Imitate_Model:
                     else:
                         self.all_actions = self.policy(qpos, curr_image)
 
-                device = "cuda" if torch.cuda.is_available() else "cpu"
                 all_actions_local = self.all_actions
+
+                # if tuple -> take first element (common pattern)
                 if isinstance(all_actions_local, tuple):
                     all_actions_local = all_actions_local[0]
 
-                if isinstance(all_actions_local, list) or isinstance(all_actions_local, np.ndarray):
-                    all_actions_local = _to_tensor_actions(all_actions_local, device)
+                # If it's already tensor/ndarray/list -> extract/convert to tensor on device
+                try:
+                    # try extracting a tensor (this function handles dicts as well)
+                    all_actions_local_tensor = _extract_action_tensor(all_actions_local, device_name)
+                except TypeError:
+                    # fallback: if it is list-like but not handled, try conversion
+                    if isinstance(all_actions_local, (list, tuple, np.ndarray)):
+                        all_actions_local_tensor = _to_tensor_actions(list(all_actions_local), device_name)
+                    else:
+                        raise
 
-                qidx = min(t % self.query_frequency, all_actions_local.shape[0] - 1)
-                raw_action = all_actions_local[qidx]
+                # determine length safely
+                if isinstance(all_actions_local_tensor, torch.Tensor):
+                    length = all_actions_local_tensor.shape[0]
+                else:
+                    try:
+                        length = len(all_actions_local_tensor)
+                    except Exception:
+                        length = 1
+
+                qidx = min(int(t % self.query_frequency), max(0, int(length) - 1))
+
+                # index into tensor
+                if isinstance(all_actions_local_tensor, torch.Tensor):
+                    raw_action_tensor = all_actions_local_tensor[qidx]
+                    raw_action = raw_action_tensor.detach().cpu().numpy()
+                else:
+                    # convert and index
+                    raw_action = np.array(all_actions_local_tensor[qidx])
 
             else:
                 # Non-ACT policies: Diffusion or CNNMLP
@@ -341,17 +436,32 @@ class Imitate_Model:
                 if isinstance(all_actions_local, tuple):
                     all_actions_local = all_actions_local[0]
 
-                if isinstance(all_actions_local, list) or isinstance(all_actions_local, np.ndarray):
-                    all_actions_local = _to_tensor_actions(all_actions_local, "cuda" if torch.cuda.is_available() else "cpu")
+                # Attempt to extract tensor/array
+                try:
+                    all_actions_local_tensor = _extract_action_tensor(all_actions_local, device_name)
+                except TypeError:
+                    if isinstance(all_actions_local, (list, tuple, np.ndarray)):
+                        all_actions_local_tensor = _to_tensor_actions(list(all_actions_local), device_name)
+                    else:
+                        raise
 
-                qidx = min(t % self.query_frequency, all_actions_local.shape[0] - 1)
-                raw_action = all_actions_local[qidx]
+                if isinstance(all_actions_local_tensor, torch.Tensor):
+                    length = all_actions_local_tensor.shape[0]
+                else:
+                    try:
+                        length = len(all_actions_local_tensor)
+                    except Exception:
+                        length = 1
 
-            if torch.is_tensor(raw_action):
-                raw_action = raw_action.detach().cpu().numpy()
-            else:
-                raw_action = np.array(raw_action)
+                qidx = min(int(t % self.query_frequency), max(0, int(length) - 1))
 
+                if isinstance(all_actions_local_tensor, torch.Tensor):
+                    raw_action_tensor = all_actions_local_tensor[qidx]
+                    raw_action = raw_action_tensor.detach().cpu().numpy()
+                else:
+                    raw_action = np.array(all_actions_local_tensor[qidx])
+
+            # final post-processing and splitting into qpos target and base action
             action = self.post_process(raw_action)
 
             if action.shape[0] >= 2:

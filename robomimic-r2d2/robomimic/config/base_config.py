@@ -159,7 +159,7 @@ class BaseConfig(Config):
         ## dataset loader config ##
 
         # num workers for loading data - generally set to 0 for low-dim datasets, and 2 for image datasets
-        self.train.num_data_workers = 2
+        self.train.num_data_workers = 0
 
         # One of ["all", "low_dim", or None]. Set to "all" to cache entire hdf5 in memory - this is 
         # by far the fastest for data loading. Set to "low_dim" to cache all non-image data. Set
@@ -218,15 +218,15 @@ class BaseConfig(Config):
         # }
         # self.train.action_config.actions.normalization = None # "min_max"
         # self.train.action_config.actions.rot_conversion = None # "axis_angle_to_6d"
-        self.train.action_keys = ["actions"]  
+        #self.train.action_keys = ["actions"]  
   
         # Configure action normalization for the "actions" key  
         self.train.action_config = {  
-            "actions": {  
-                "normalization": "min_max"  
-            }  
+           "actions": {  
+               "normalization": None 
+           }  
         }
-        # self.train.action_config.do_not_lock_keys()
+        #self.train.action_config.do_not_lock_keys()
 
         # one of [None, "last"] - set to "last" to include goal observations in each batch
         self.train.goal_mode = None

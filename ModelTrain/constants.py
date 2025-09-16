@@ -2,7 +2,7 @@
 import pathlib
 import os
 
-DATA_DIR = '/home/shubh/dobot_xtrainer/experiments/datasets/'
+DATA_DIR = '/home/shubh/xtrainer/experiments/datasets/'
 TASK_CONFIGS = {
     # dobot move cube new
         'move_cube_new': {

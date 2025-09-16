@@ -12,7 +12,7 @@ def arg_config():
     parser.add_argument('--load_pretrain', action='store_true', default=False)  # Ignore this parameter and leave the default setting
     parser.add_argument('--eval_every', action='store', type=int, default=100, help='eval_every', required=False)  # Ignore this parameter and leave the default setting
     parser.add_argument('--validate_every', action='store', type=int, default=100, help='validate_every',required=False)
-    parser.add_argument('--save_every', action='store', type=int, default=1000, help='save_every', required=False)
+    parser.add_argument('--save_every', action='store', type=int, default=5000, help='save_every', required=False)
     # parser.add_argument('--resume_ckpt_path', action='store', type=str, help='resume_ckpt_path', default= "./ckpt/ckpt_closh/ckpt_closh_puping2_new10000/policy_last.ckpt",required=False)
     parser.add_argument('--resume_ckpt_path', action='store', type=str, help='resume_ckpt_path', required=False)
     parser.add_argument('--skip_mirrored_data', action='store_true')

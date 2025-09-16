@@ -9,7 +9,13 @@
             "log_wandb": false,
             "wandb_proj_name": "debug"
         },
-        "mse": {},
+        "mse": {
+            "enabled": false,
+            "every_n_epochs": 50,
+            "on_save_ckpt": true,
+            "num_samples": 20,
+            "visualize": true
+        },
         "save": {
             "enabled": true,
             "every_n_seconds": null,
@@ -33,8 +39,12 @@
             "horizon": 400,
             "rate": 50,
             "warmstart": 0,
-            "terminate_on_success": true
-        }
+            "terminate_on_success": true,
+            "batched": false,
+            "num_batch_envs": 5
+        },
+        "env_meta_update_dict": {},
+        "ckpt_path": null
     },
     "train": {
         "data": [
@@ -59,16 +69,22 @@
             "rewards",
             "dones"
         ],
+        "action_keys": [
+            "actions"
+        ],
+        "action_config": {
+            "actions": {
+                "normalization": null
+            }
+        },
         "goal_mode": null,
         "cuda": true,
         "batch_size": 100,
         "num_epochs": 2000,
         "seed": 1,
-        "action_config": {
-            "actions": {
-                "normalization": null
-            }
-        }
+        "max_grad_norm": null,
+        "data_format": "robomimic",
+        "shuffled_obs_key_groups": null
     },
     "algo": {
         "optim_params": {
@@ -167,14 +183,24 @@
             "sinusoidal_embedding": false,
             "activation": "gelu",
             "supervise_all_steps": false,
-            "nn_parameter_for_timesteps": true
-        }
+            "nn_parameter_for_timesteps": true,
+            "pred_future_acs": false,
+            "causal": true
+        },
+        "language_conditioned": false
     },
     "observation": {
         "modalities": {
             "obs": {
-                "low_dim": ["qpos", "qvel"],
-                "rgb": ["rightImg", "topImg", "leftImg"],
+                "low_dim": [
+                    "qpos",
+                    "qvel"
+                ],
+                "rgb": [
+                    "rightImg",
+                    "topImg",
+                    "leftImg"
+                ],
                 "depth": [],
                 "scan": []
             },

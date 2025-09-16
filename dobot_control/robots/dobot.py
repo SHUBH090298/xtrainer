@@ -105,7 +105,7 @@ class DobotRobot(Robot):
         robot_joints_angle = list(map(float, self.r_inter.GetAngle().split("{")[1].split("}")[0].split(",")))  # 单位：度�?
         robot_joints = [np.deg2rad(robot_joint) for robot_joint in robot_joints_angle]  # 单位：弧�?
         if self._use_gripper:
-            gripper_pos = [1.0]
+            gripper_pos = [self._get_gripper_pos()]
             pos = np.append(robot_joints, gripper_pos)
         else:
             gripper_pos = [1.0]

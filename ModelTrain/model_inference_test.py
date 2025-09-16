@@ -11,7 +11,7 @@ if __name__ == '__main__':
     observation = {'qpos': [], 'images': {'left_wrist': [], 'right_wrist': [], 'top': []}}
     show_canvas = np.zeros((480, 640 * 3, 3), dtype=np.uint8)
 
-    dataset_path = "/home/shubh/dobot_xtrainer/experiments/datasets/Pick_Place/train_data/episode_init_46.hdf5"
+    dataset_path = "/home/shubh/xtrainer/experiments/datasets/Pick_Place/train_data/episode_init_16.hdf5"
 
     with h5py.File(dataset_path, 'r', rdcc_nbytes=1024 ** 2 * 2) as root:
         total_frames = len(root["/observations/images/top"])
@@ -50,7 +50,7 @@ if __name__ == '__main__':
             predict_action = np.array(predict_action_full).flatten()[:len(action)]
             print("predicted ",predict_action)
             # Compute difference in degrees
-            action_delta = np.rad2deg(predict_action - action)
+            action_delta = predict_action - np.deg2rad(action)
             print("action_delta (deg):", action_delta)
 
             cv2.waitKey(0)
