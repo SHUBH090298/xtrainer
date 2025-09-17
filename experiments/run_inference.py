@@ -15,9 +15,10 @@ from dobot_control.cameras.realsense_camera import RealSenseCamera
   
 from scripts.manipulate_utils import load_ini_data_camera  
   
-# Add robomimic imports  
+# Use robomimic imports for robomimic checkpoints  
 import robomimic.utils.file_utils as FileUtils  
 import robomimic.utils.torch_utils as TorchUtils  
+import robomimic.utils.obs_utils as ObsUtils  
 import torch  
   
 @dataclass  
@@ -34,28 +35,33 @@ def run_thread_cam(rs_cam, which_cam):
     if which_cam==0:  
         while thread_run:  
             image_left, _ = rs_cam.read()  
-            image_left = image_left[:, :, ::-1]  
+            # Fix: Use copy() to avoid negative strides  
+            image_left = image_left[:, :, ::-1].copy()  
     elif which_cam==1:  
         while thread_run:  
             image_right, _ = rs_cam.read()  
-            image_right = image_right[:, :, ::-1]  
+            # Fix: Use copy() to avoid negative strides  
+            image_right = image_right[:, :, ::-1].copy()  
     elif which_cam==2:  
         while thread_run:  
             image_top, _ = rs_cam.read()  
-            image_top = image_top[:, :, ::-1]  
+            # Fix: Use copy() to avoid negative strides  
+            image_top = image_top[:, :, ::-1].copy()  
     else:  
         print("Camera index error! ")  
   
-def preprocess_image_for_model(image):  
-    """Preprocess camera image to match training format"""  
-    # Ensure image is the right size (480, 640, 3) and uint8  
+def preprocess_image_for_robomimic(image):  
+    """Preprocess camera image for robomimic model"""  
+    # Ensure correct size (480, 640, 3)  
     if image.shape != (480, 640, 3):  
         image = cv2.resize(image, (640, 480))  
       
-    # Ensure uint8 format and contiguous memory  
-    image = np.ascontiguousarray(image.astype(np.uint8))  
+    # Convert to float32 and normalize to [0, 1]  
+    image = image.astype(np.float32) / 255.0  
       
-    # Keep in (H, W, C) format - let robomimic handle the conversion  
+    # Convert from (H, W, C) to (C, H, W) format  
+    image = np.transpose(image, (2, 0, 1))  
+      
     return image  
   
 def main(args):  
@@ -105,9 +111,11 @@ def main(args):
     for jnt in np.linspace(curr_joints, reset_joints, steps):  
         env.step(jnt,np.array([1,1]))  
   
-    # Initialize the robomimic model  
+    # Initialize robomimic model properly  
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)  
     ckpt_path = "/home/shubh/xtrainer/robomimic-r2d2/bc_trained_models/test/20250916113358/models/model_epoch_50.pth"  
+      
+    # Load policy using robomimic's method  
     policy, ckpt_dict = FileUtils.policy_from_checkpoint(ckpt_path=ckpt_path, device=device, verbose=True)  
     print("model init success...")  
   
@@ -127,49 +135,46 @@ def main(args):
         # Obtain the current images  
         time0 = time.time()  
           
-        # Preprocess images to match training format  
-        processed_left = preprocess_image_for_model(image_left)  
-        processed_right = preprocess_image_for_model(image_right)  
-        processed_top = preprocess_image_for_model(image_top)  
+        # Preprocess images to match model expectations  
+        processed_left = preprocess_image_for_robomimic(image_left)  
+        processed_right = preprocess_image_for_robomimic(image_right)  
+        processed_top = preprocess_image_for_robomimic(image_top)  
           
-        # Create observation dictionary matching training format  
+        # Create observation dictionary using the exact keys from config  
+        # Note: qpos and qvel shapes are [1] according to the model config  
         observation = {  
-            'qpos': np.ascontiguousarray(obs["joint_positions"].astype(np.float64)),  
-            'qvel': np.ascontiguousarray(np.zeros_like(obs["joint_positions"]).astype(np.float64)),  
+            'qpos': np.array([obs["joint_positions"][0]], dtype=np.float32),  # Single value  
+            'qvel': np.array([0.0], dtype=np.float32),  # Single velocity value  
+            'leftImg': processed_left,  
             'rightImg': processed_right,  
-            'topImg': processed_top,  
-            'leftImg': processed_left  
+            'topImg': processed_top  
         }  
           
         if args.show_img:  
-            imgs = np.hstack((processed_left, processed_right, processed_top))  
+            imgs = np.hstack((image_left, image_right, image_top))  
             cv2.imshow("imgs", imgs)  
             cv2.waitKey(1)  
         time1 = time.time()  
         print("read images time(ms)：",(time1-time0)*1000)  
   
         try:  
-            # Model inference  
-            action_tensor = policy(observation)  
+            # Model inference using robomimic policy  
+            action = policy(observation)  
               
-            # Convert tensor to numpy array  
-            if torch.is_tensor(action_tensor):  
-                action = action_tensor.detach().cpu().numpy()  
-            else:  
-                action = np.array(action_tensor)  
+            # Convert to numpy if needed  
+            if torch.is_tensor(action):  
+                action = action.detach().cpu().numpy()  
               
-            # Handle action shape - expand to 14 dimensions if needed  
-            if action.shape == (1,):  
-                # Single action output - need to map to full joint space  
+            # Handle single action output (action_dim=1 from config)  
+            if action.shape == (1,) or len(action) == 1:  
+                # This model only predicts 1 action dimension  
+                # Map this to your robot's control scheme  
                 action_full = obs["joint_positions"].copy()  
-                # Map the single action to appropriate joint(s) based on your task  
-                # This is task-specific - you may need to adjust this mapping  
-                action_full[0] = action[0]  # Example: map to first joint  
-                action = action_full  
-            elif len(action.shape) == 1 and action.shape[0] < 14:  
-                # Partial action vector - pad with current joint positions  
-                action_full = obs["joint_positions"].copy()  
-                action_full[:len(action)] = action  
+                  
+                # Example mapping - adjust based on your task  
+                # You might want to map to gripper, specific joint, or scale to multiple joints  
+                action_full[6] = np.clip(action[0], 0, 1)  # Map to left gripper  
+                action_full[13] = np.clip(action[0], 0, 1)  # Map to right gripper  
                 action = action_full  
               
             # Gripper constraints  
