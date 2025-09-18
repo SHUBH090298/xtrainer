@@ -67,8 +67,8 @@ def initialize_robot_safely(env):
     time.sleep(1)  
       
     # Initial photo position  
-    reset_joints_left = np.deg2rad([-90, 0, -90, 0, 90, 90, 57])  
-    reset_joints_right = np.deg2rad([90, 0, 90, 0, -90, -90, 57])  
+    reset_joints_left  = np.deg2rad([-90, 20, -100, 20, 90, 70, 0])
+    reset_joints_right = np.deg2rad([90, -20, 100, -20, -90, -70, 0]) 
     reset_joints = np.concatenate([reset_joints_left, reset_joints_right])  
       
     curr_joints = env.get_obs()["joint_positions"]  
