@@ -1,5 +1,6 @@
 experiments/datasets
 ModelTrain/ckpt 
+robomimic-r2d2/bc_trained_models
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
