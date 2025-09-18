@@ -29,17 +29,17 @@ model_config_mapping = {
     #     "action_names": None,
     #     "trajectory_name_regex": r'(\d+_trajectory_im\d+)'
     # },
-    "r2d2_wire": {
-        # "model": "/home/soroushn/expdata/r2d2/im/diffusion_policy/debug/ds_pen-in-cup_cams_3cams/20230830160945/models/model_epoch_2.pth",
-        "model": "/home/soroushn/expdata/r2d2/im/bc_xfmr/debug/ds_pen-in-cup_cams_3cams_predfuture_True_ac_keys_rel/20230830161631/models/model_epoch_2.pth",
-        "folder": "/home/soroushn/tmp/model_predictions",
-        # "action_names": ['x', 'y', 'z', 'r', 'p', 'y', "gripper_pos"], # use custom names
-        "action_names": None, # use default names, see line 71
-        "trajectory_name_regex": r'(\w+_\w+_\d{2}_\d{2}:\d{2}:\d{2}_\d{4})' # the name of the figure files need to be custom defined (the part of the names of the trajectories that uniquely identifies them)
+"r2d2_wire": {  
+    "model": "/home/shubh/xtrainer/robomimic-r2d2/bc_trained_models/test/20250917115237/models/model_epoch_100.pth",  
+    "folder": "/home/shubh/xtrainer/experiments/model_predictions/",  
+    "action_names": ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6', 'joint_7',   
+                'joint_8', 'joint_9', 'joint_10', 'joint_11', 'joint_12', 'joint_13', 'joint_14'],  # or specify custom names as shown above  
+    "trajectory_name_regex": r'(test)'  # matches the hardcoded filename  
+} # the name of the figure files need to be custom defined (the part of the names of the trajectories that uniquely identifies them)
     }
-}
 
-NUM_SAMPLES = 2
+
+NUM_SAMPLES = 1
 
 # loop through each model
 for model_name in model_config_mapping:
@@ -72,7 +72,15 @@ for model_name in model_config_mapping:
     trainset, validset = TrainUtils.load_data_for_training(config, obs_keys=shape_meta["all_obs_keys"])
     # trainset.datasets is a list
     # the trajectories to plot is randomly sampled from the training and validation sets
-    training_sampled_data = random.sample(trainset.datasets, NUM_SAMPLES)
+    #training_sampled_data = random.sample(trainset.datasets, NUM_SAMPLES)
+    if hasattr(trainset, 'datasets'):  
+    # MetaDataset case  
+        training_sampled_data = random.sample(trainset.datasets, NUM_SAMPLES)  
+    else:  
+    # SequenceDataset case - create a list with the single dataset  
+        training_sampled_data = [trainset] if NUM_SAMPLES > 0 else []  
+    if NUM_SAMPLES > 1:  
+        print(f"Warning: NUM_SAMPLES={NUM_SAMPLES} but only 1 dataset available")
     # validation_sampled_data = random.sample(validset.datasets, NUM_SAMPLES)
 
     inference_datasets_mapping = {"training": training_sampled_data} #, "validation": validation_sampled_data}
@@ -136,7 +144,7 @@ for model_name in model_config_mapping:
                 model_output = model.get_action(batch["obs"])
                 
                 actual_action = TensorUtils.to_numpy(
-                    batch["actions"][0][0]
+                    batch["actions"][0]
                 )
                 predicted_action = TensorUtils.to_numpy(
                     model_output[0]
